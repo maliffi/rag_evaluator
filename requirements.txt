@@ -1,0 +1,22 @@
+# Core dependencies
+numpy
+pandas
+matplotlib
+
+# RAG related packages
+langchain==0.3.21
+langchain-community==0.3.20
+langchain-ollama==0.2.3
+sentence-transformers==3.4.1
+# To generate RAG test dataset
+ragas==0.2.14
+
+# For RAG vector store
+faiss-cpu
+
+# A library that prepares raw documents for downstream ML tasks.
+unstructured==0.17.0
+# PDF support for unstructured
+unstructured[pdf]
+# For file type identification
+# python-magic-bin==0.4.14
