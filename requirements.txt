@@ -12,11 +12,11 @@ sentence-transformers==3.4.1
 ragas==0.2.14
 
 # For RAG vector store
-faiss-cpu
+langchain_qdrant
 
 # A library that prepares raw documents for downstream ML tasks.
 unstructured==0.17.0
 # PDF support for unstructured
 unstructured[pdf]
-# For file type identification
-# python-magic-bin==0.4.14
+
+nest-asyncio==1.6.0
