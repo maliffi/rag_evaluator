@@ -1,10 +1,8 @@
 # Standard library imports
 import logging
-from typing import List, Tuple
+import os.path
 
 # LangChain imports
-from langchain import hub
-from langchain.chains import RetrievalQA as QueryEngine
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.output_parsers import StrOutputParser
@@ -38,8 +36,8 @@ from ragas.embeddings import LangchainEmbeddingsWrapper
 import pandas as pd
 
 """
-RAG Evaluator main module.
-This module provides functionality for evaluating Retrieval-Augmented Generation systems.
+RAG testset generator main module.
+This module provides functionality for generating a testset for a Retrieval-Augmented Generation system.
 """
 
 def load_knowledge_base(directory_path: str) -> list[Document]:
@@ -86,14 +84,12 @@ def create_knowledge_graph(documents: list[Document], generator_llm: OllamaLLM, 
         # Wrap LangChain models in Ragas wrappers
         ragas_llm = LangchainLLMWrapper(generator_llm)
         ragas_embeddings = LangchainEmbeddingsWrapper(generator_embeddings)
-
         # Create the transforms
         transforms = default_transforms(documents=documents, llm=ragas_llm, embedding_model=ragas_embeddings)
-
         # Apply the transforms to the knowledge graph
         logger.info("Applying transforms to knowledge graph...")
         # Increase timeout and add retry count to handle parsing errors
-        run_config = RunConfig(timeout=900, max_retries=10)  
+        run_config = RunConfig(timeout=6000, max_retries=10)  
         apply_transforms(kg, transforms, run_config=run_config)
     except Exception as e:
         logger.error(f"Error applying transforms to knowledge graph: {e}", exc_info=True)
@@ -108,7 +104,7 @@ def create_knowledge_graph(documents: list[Document], generator_llm: OllamaLLM, 
 
 def setup_models() -> tuple[OllamaLLM, OllamaEmbeddings]:
     """
-    Setup the LLM and embedding model for the RAG evaluator.
+    Setup the LLM and embedding model for the RAG testset generator.
 
     Returns:
         tuple[OllamaLLM, OllamaEmbeddings]: Tuple composed of the generator and embedding models.
@@ -168,66 +164,20 @@ def create_qdrant_client(qdrant_host: str, qdrant_port: int) -> QdrantClient:
     logger.info(f"Qdrant client initialized successfully at [{qdrant_host}:{qdrant_port}]")
     return client
 
-def create_vector_store_index(collection_name: str, qdrant_client: QdrantClient, embedding_model: OllamaEmbeddings, documents: list[Document] = None) -> VectorStore:
-    """
-    Create a new collection in Qdrant and initialize a LangChain Qdrant vector store.
-    
-    Args:
-        collection_name (str): Name of the collection to create.
-        qdrant_client (QdrantClient): Qdrant client instance.
-        embedding_model (OllamaEmbeddings): Embedding model to use.
-        documents (list[Document], optional): List of documents to add to the vector store. Defaults to None.
-    
-    Returns:
-        VectorStore: The created vector store.
-    """
-    # Create a new collection in Qdrant
-    # Written following official LangChain documentation (https://python.langchain.com/docs/integrations/vectorstores/qdrant/)
-    qdrant_client.create_collection(
-        collection_name=collection_name,
-        vectors_config=VectorParams(size=3072, distance=Distance.COSINE),
-    )
-    logger.info(f"Collection [{collection_name}] created successfully in Qdrant")
-
-    # Initialize a LangChain Qdrant vector store
-    vector_store = Qdrant(
-        client=qdrant_client,
-        collection_name=collection_name,
-        embeddings=embedding_model
-    )
-
-    # If documents are provided, add them to the vector store
-    if documents:
-        vector_store.add_documents(documents)
-
-    logger.info("Vector store created successfully")
-    return vector_store
-
-def evaluate_rag(test_df: pd.DataFrame, query_engine: QueryEngine, csv_file: str):
-    """
-    Evaluate the RAG system.
-    """
-    # Load the provided CSV
-    test_df = pd.read_csv(csv_file).dropna()
-    pass    
-
-def generate_response(query_engine, question):
-    """
-    Define a function that will accept the query engine and a question, 
-    and return the answer along with the context it looked at to generate the corresponding answer.
-    """
-    response = query_engine.query(question)
-    return {
-        "answer": response.response,
-        "contexts": [c.node.get_content() for c in response.source_nodes],
-    }
 
 def main():
     """
-    Main entry point for the RAG evaluator.
+    Main entry point for the RAG testset generator.
     """
-    logger.info("Starting RAG evaluation framework initialization...")
-    documents_chunks = load_knowledge_base("/Users/matteoaliffi/Dev/Study/RAG/rag_evaluator/docs")
+    logger.info("Starting RAG testset generator initialization...")
+    # Get the current script's directory and construct path to docs directory
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    logger.info(f"Current directory: {current_dir}")
+    parent_dir = os.path.dirname(current_dir)
+    logger.info(f"Parent directory: {parent_dir}")
+    docs_path = os.path.join(parent_dir, "docs")
+    logger.info(f"Loading documents from directory: {docs_path}")
+    documents_chunks = load_knowledge_base(docs_path)
     generator_llm, ollama_emb = setup_models()
     logger.info("Models initialized.")
 
@@ -244,31 +194,13 @@ def main():
     logger.info("Testset generated.")
 
     # Save the testset
-    save_testset(testset, "generated_testset.csv")
+    testset_csv = "generated_testset.csv"
+    save_testset(testset, testset_csv)
     logger.info("Testset saved.")
 
-    # Create a Qdrant client
-    qdrant_client = create_qdrant_client("localhost", 6333)
-    # Create a vector store from the documents
-    vector_store = create_vector_store_index("ragas", qdrant_client, ollama_emb, documents_chunks)
-    logger.info("Vector store created.")
-
-    # Create a retriever
-    retriever = vector_store.as_retriever()
-    logger.info("Retriever created.")
-
-    # Load a specific prompt template identified by "rlm/rag-prompt" from LangChain Hub. 
-    # This particular prompt is designed for RAG applications
-    prompt = hub.pull("rlm/rag-prompt")
-
-    rag_chain = (
-        {"input": {"question": RunnablePassthrough(), "context": retriever}}
-        | prompt
-        | generator_llm
-        | StrOutputParser()
-    )
-
-    rag_chain.invoke("What is Task Decomposition?")
+    # Verify everything is correct by loading the testset 
+    test_df = pd.read_csv(testset_csv)
+    logger.info(f"Testset loaded: {test_df}")
 
 if __name__ == "__main__":
     # Set up logging
